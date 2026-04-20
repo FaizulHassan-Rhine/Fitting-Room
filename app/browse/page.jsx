@@ -22,6 +22,7 @@ const sortOptions = [
 
 const SEARCH_API_ROUTE = "/api/v1/search";
 const PAGE_SIZE = 50;
+const LIVE_REFRESH_MS = 12000;
 
 export default function BrowsePage() {
   const router = useRouter();
@@ -184,8 +185,9 @@ export default function BrowsePage() {
 
   const mapApiProduct = (p, idx, page) => {
     const slug = p.url?.split("/").filter(Boolean).pop() || "";
+    const stableFallbackId = p.url || slug || `${p.title || "product"}-${idx}`;
     return {
-      id: p._id || `${slug || "api"}-${page}-${idx}`,
+      id: p._id || stableFallbackId,
       title: p.title || "Untitled Product",
       description: p.description || "",
       brand: p.brandName || "Unknown Brand",
@@ -333,6 +335,66 @@ export default function BrowsePage() {
     observer.observe(target);
     return () => observer.disconnect();
   }, [ready, loadingProducts, isFetchingMore, hasNextPage]);
+
+  // Live refresh visible catalog data without a full page reload.
+  // Uses live=1 so backend bypasses cache and reflects DB inserts/deletes quickly.
+  useEffect(() => {
+    if (!ready) return;
+
+    const intervalId = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      if (loadingProducts || isFetchingMore) return;
+
+      try {
+        const params = new URLSearchParams();
+        if (searchQuery.trim()) params.set("q", searchQuery.trim());
+        if (selectedBrand) params.set("brandName", selectedBrand);
+
+        const sortMap = {
+          relevance: "relevance",
+          priceLow: "price_asc",
+          priceHigh: "price_desc",
+          newest: "newest",
+        };
+        params.set("sort", sortMap[sortBy] || "relevance");
+        params.set("page", "1");
+        // API max limit is 100; refresh up to the first visible 100 for stability.
+        const refreshLimit = Math.min(Math.max(products.length, PAGE_SIZE), 100);
+        params.set("limit", String(refreshLimit));
+        params.set("live", "1");
+
+        const res = await fetch(`${SEARCH_API_ROUTE}?${params.toString()}`, {
+          headers: { Accept: "application/json" },
+        });
+        if (!res.ok) return;
+
+        const json = await res.json();
+        const apiItems = Array.isArray(json?.data?.data) ? json.data.data : [];
+        const refreshed = apiItems.map((p, idx) => mapApiProduct(p, idx, 1));
+
+        if (refreshed.length > 0) {
+          setProducts(refreshed);
+          setApiError("");
+          const pageInfo = json?.data?.pagination;
+          if (typeof pageInfo?.hasNext === "boolean") {
+            setHasNextPage(pageInfo.hasNext);
+          }
+        }
+      } catch {
+        // Silent refresh should never interrupt browsing.
+      }
+    }, LIVE_REFRESH_MS);
+
+    return () => clearInterval(intervalId);
+  }, [
+    ready,
+    searchQuery,
+    selectedBrand,
+    sortBy,
+    loadingProducts,
+    isFetchingMore,
+    products.length,
+  ]);
 
   // Show a floating "scroll to top" button after user scrolls down.
   useEffect(() => {

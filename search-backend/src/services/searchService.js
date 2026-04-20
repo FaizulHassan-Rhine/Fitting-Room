@@ -23,6 +23,11 @@ const { buildFlattenProductsStages, buildSafePriceNumberExpr } = require('../uti
  *   - Two-layer cache wraps the whole thing
  */
 async function search(params, meta = {}) {
+  const liveFlag = String(params?.live ?? '').toLowerCase();
+  const bypassCache = liveFlag === '1' || liveFlag === 'true' || liveFlag === 'yes';
+  const cacheParams = { ...params };
+  delete cacheParams.live;
+
   const {
     q         = '',
     brandName,
@@ -35,13 +40,15 @@ async function search(params, meta = {}) {
   } = params;
 
   const startMs  = Date.now();
-  const cacheKey = cacheService.buildKey(CACHE_PREFIX.SEARCH, params);
+  const cacheKey = cacheService.buildKey(CACHE_PREFIX.SEARCH, cacheParams);
 
   // ── Cache check ────────────────────────────────────────────────────────────
-  const { data: cached, layer } = await cacheService.get(cacheKey);
-  if (cached) {
-    _logSearch({ query: q, resultsCount: cached.pagination.total, cacheHit: true, cacheLayer: layer, responseTimeMs: Date.now() - startMs, ...meta });
-    return { ...cached, cached: true, cacheLayer: layer };
+  if (!bypassCache) {
+    const { data: cached, layer } = await cacheService.get(cacheKey);
+    if (cached) {
+      _logSearch({ query: q, resultsCount: cached.pagination.total, cacheHit: true, cacheLayer: layer, responseTimeMs: Date.now() - startMs, ...meta });
+      return { ...cached, cached: true, cacheLayer: layer };
+    }
   }
 
   const pageNum  = Math.max(1, parseInt(page, 10) || 1);
