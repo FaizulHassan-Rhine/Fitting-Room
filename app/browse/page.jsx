@@ -21,6 +21,7 @@ const sortOptions = [
 ];
 
 const SEARCH_API_ROUTE = "/api/v1/search";
+const PAGE_SIZE = 50;
 
 export default function BrowsePage() {
   const router = useRouter();
@@ -41,6 +42,10 @@ export default function BrowsePage() {
   const [recentSearches, setRecentSearches] = useState([]);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(false);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(true);
   const [apiError, setApiError] = useState("");
   const [imageLoaded, setImageLoaded] = useState({});
   const [showTryOnChooser, setShowTryOnChooser] = useState(false);
@@ -48,6 +53,8 @@ export default function BrowsePage() {
   const [pendingTryOnProductId, setPendingTryOnProductId] = useState(null);
   const [isUploadingTryOnPhoto, setIsUploadingTryOnPhoto] = useState(false);
   const uploadInputRef = useRef(null);
+  const loadMoreRef = useRef(null);
+  const loadMoreLockRef = useRef(false);
 
   useEffect(() => {
     setReady(true);
@@ -175,12 +182,55 @@ export default function BrowsePage() {
     addToCart({ ...product, selectedSize: defaultSize });
   };
 
-  // Load products from backend search API (real MongoDB data)
+  const mapApiProduct = (p, idx, page) => {
+    const slug = p.url?.split("/").filter(Boolean).pop() || "";
+    return {
+      id: p._id || `${slug || "api"}-${page}-${idx}`,
+      title: p.title || "Untitled Product",
+      description: p.description || "",
+      brand: p.brandName || "Unknown Brand",
+      price: `${getCurrencySymbol(p.currency || "BDT")}${p.price ?? ""}`,
+      rawPrice: p.price,
+      currency: p.currency || "BDT",
+      images: Array.isArray(p.images) ? p.images : [],
+      image: Array.isArray(p.images) ? p.images[0] : undefined,
+      url: p.url,
+      slug,
+      category: p.category || "All",
+      sizes: Array.isArray(p.sizes) ? p.sizes : ["M"],
+      status: "active",
+    };
+  };
+
+  const mergeUniqueProducts = (previous, next) => {
+    const byId = new Map(previous.map((item) => [item.id, item]));
+    next.forEach((item) => byId.set(item.id, item));
+    return Array.from(byId.values());
+  };
+
+  // Reset pagination whenever query/sort/brand changes.
   useEffect(() => {
     if (!ready) return;
+    setCurrentPage(1);
+    setHasNextPage(true);
+    setProducts([]);
+    setImageLoaded({});
+    setApiError("");
+    loadMoreLockRef.current = false;
+  }, [ready, searchQuery, selectedBrand, sortBy]);
 
-    // Mark loading immediately to avoid "No Results" flicker before debounce fires.
-    setLoadingProducts(true);
+  // Load products page-by-page from backend search API.
+  useEffect(() => {
+    if (!ready) return;
+    if (currentPage > 1 && !hasNextPage) return;
+
+    const isFirstPage = currentPage === 1;
+
+    if (isFirstPage) {
+      setLoadingProducts(true);
+    } else {
+      setIsFetchingMore(true);
+    }
     setApiError("");
 
     const controller = new AbortController();
@@ -197,56 +247,106 @@ export default function BrowsePage() {
           newest: "newest",
         };
         params.set("sort", sortMap[sortBy] || "relevance");
-        params.set("limit", "100");
+        params.set("page", String(currentPage));
+        params.set("limit", String(PAGE_SIZE));
 
-        const res = await fetch(`${SEARCH_API_ROUTE}?${params.toString()}`, {
-          signal: controller.signal,
-          headers: { Accept: "application/json" },
-        });
-        if (!res.ok) {
-          throw new Error(`Search API failed (${res.status})`);
+        const fetchPage = async () => {
+          const res = await fetch(`${SEARCH_API_ROUTE}?${params.toString()}`, {
+            signal: controller.signal,
+            headers: { Accept: "application/json" },
+          });
+
+          const payload = await res.json().catch(() => null);
+          if (!res.ok) {
+            const message = payload?.message || `Search API failed (${res.status})`;
+            const err = new Error(message);
+            err.status = res.status;
+            throw err;
+          }
+          return payload;
+        };
+
+        let json;
+        try {
+          json = await fetchPage();
+        } catch (err) {
+          // Retry once for transient 5xx backend hiccups.
+          if (err.name === "AbortError") throw err;
+          if ((err.status || 0) >= 500) {
+            await new Promise((resolve) => setTimeout(resolve, 350));
+            json = await fetchPage();
+          } else {
+            throw err;
+          }
         }
-        const json = await res.json();
+
         const apiItems = Array.isArray(json?.data?.data) ? json.data.data : [];
+        const mapped = apiItems.map((p, idx) => mapApiProduct(p, idx, currentPage));
+        const pageInfo = json?.data?.pagination;
+        const nextPageAvailable =
+          typeof pageInfo?.hasNext === "boolean" ? pageInfo.hasNext : apiItems.length >= PAGE_SIZE;
 
-        const mapped = apiItems.map((p, idx) => {
-          const slug = p.url?.split("/").filter(Boolean).pop() || "";
-          return {
-            id: p._id || `${slug || "api"}-${idx}`,
-            title: p.title || "Untitled Product",
-            description: p.description || "",
-            brand: p.brandName || "Unknown Brand",
-            price: `${getCurrencySymbol(p.currency || "BDT")}${p.price ?? ""}`,
-            rawPrice: p.price,
-            currency: p.currency || "BDT",
-            images: Array.isArray(p.images) ? p.images : [],
-            image: Array.isArray(p.images) ? p.images[0] : undefined,
-            url: p.url,
-            slug,
-            category: p.category || "All",
-            sizes: Array.isArray(p.sizes) ? p.sizes : ["M"],
-            status: "active",
-          };
-        });
-
-        setProducts(mapped);
-        setImageLoaded({});
+        setHasNextPage(nextPageAvailable);
+        setProducts((prev) => (isFirstPage ? mapped : mergeUniqueProducts(prev, mapped)));
       } catch (err) {
         if (err.name === "AbortError") return;
         console.error("Failed to load products from search API:", err);
-        setApiError("Live API unavailable. No database results loaded.");
-        setProducts([]);
-        setImageLoaded({});
+        setApiError(
+          isFirstPage
+            ? "Live API unavailable. No database results loaded."
+            : "Couldn't load more products. Scroll again to retry."
+        );
+        if (isFirstPage) {
+          setProducts([]);
+          setImageLoaded({});
+          setHasNextPage(false);
+        }
       } finally {
         setLoadingProducts(false);
+        setIsFetchingMore(false);
+        loadMoreLockRef.current = false;
       }
-    }, 300);
+    }, isFirstPage ? 300 : 0);
 
     return () => {
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [ready, searchQuery, selectedBrand, sortBy]);
+  }, [ready, currentPage, searchQuery, selectedBrand, sortBy, hasNextPage]);
+
+  // Auto-fetch the next page before users hit the bottom.
+  useEffect(() => {
+    if (!ready || loadingProducts || isFetchingMore || !hasNextPage) return;
+    const target = loadMoreRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting || loadMoreLockRef.current) return;
+        loadMoreLockRef.current = true;
+        setCurrentPage((prev) => prev + 1);
+      },
+      { rootMargin: "500px 0px", threshold: 0.01 }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [ready, loadingProducts, isFetchingMore, hasNextPage]);
+
+  // Show a floating "scroll to top" button after user scrolls down.
+  useEffect(() => {
+    const onScroll = () => {
+      setShowScrollTop(window.scrollY > 600);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const availableBrands = Array.from(new Set(products.map((p) => p.brand).filter(Boolean))).sort();
 
@@ -822,7 +922,8 @@ export default function BrowsePage() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {filteredProducts.map((product) => (
                   <div
                     key={product.id}
@@ -990,11 +1091,37 @@ export default function BrowsePage() {
                     </div>
                   </div>
                 ))}
-              </div>
+                </div>
+                <div ref={loadMoreRef} className="py-8 flex items-center justify-center">
+                  {isFetchingMore ? (
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <div className="w-4 h-4 rounded-full border-2 border-gray-300 border-t-gray-700 animate-spin" aria-hidden />
+                      Loading more products...
+                    </div>
+                  ) : hasNextPage ? (
+                    <span className="text-xs text-gray-400">Scroll to load more</span>
+                  ) : (
+                    <span className="text-xs text-gray-400">You have reached the end</span>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
       </div>
+
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-6 right-6 z-40 w-11 h-11 rounded-full bg-black text-white shadow-lg hover:bg-gray-800 transition-colors flex items-center justify-center"
+          aria-label="Scroll to top"
+          title="Scroll to top"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+          </svg>
+        </button>
+      )}
 
       <style jsx>{`
         @keyframes fadeIn {

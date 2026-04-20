@@ -16,7 +16,15 @@ const mongooseOptions = {
 };
 
 async function connectDB() {
-  if (cached.conn) return cached.conn;
+  if (cached.conn && mongoose.connection.readyState === 1) {
+    return cached.conn;
+  }
+
+  // If we have a stale/disconnected cached handle, force a clean reconnect.
+  if (cached.conn && mongoose.connection.readyState !== 1) {
+    cached.conn = null;
+    cached.promise = null;
+  }
 
   if (!MONGODB_URI) {
     throw new Error('MONGODB_URI is not defined. Add it to your .env file.');
