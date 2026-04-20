@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getProductUrl, getCurrencySymbol } from "@/lib/productStorage";
@@ -11,11 +10,6 @@ import ProductChatModal from "@/components/ProductChatModal";
 import UserPhotosModal from "@/components/UserPhotosModal";
 import { getUserPhotos, saveUserPhoto, setLastUsedPhotoId } from "@/lib/photoStorage";
 import { compressImage } from "@/lib/imageCompression";
-
-const ShoppingPreferenceModal = dynamic(
-  () => import("@/components/ShoppingPreferenceModal"),
-  { ssr: false }
-);
 
 const categories = ["All", "T-Shirts", "Jeans", "Dresses", "Jackets", "Shoes"];
 const sizes = ["XS", "S", "M", "L", "XL", "XXL"];
@@ -33,7 +27,6 @@ export default function BrowsePage() {
   const searchParams = useSearchParams();
   const { addToCart } = useCart();
   const [products, setProducts] = useState([]);
-  const [showPreferenceModal, setShowPreferenceModal] = useState(false);
   const [ready, setReady] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState("relevance");
@@ -58,10 +51,6 @@ export default function BrowsePage() {
 
   useEffect(() => {
     setReady(true);
-    const savedPreference = localStorage.getItem("shoppingPreference");
-    if (!savedPreference) {
-      setShowPreferenceModal(true);
-    }
     
     // Load recent searches
     const saved = localStorage.getItem("recentSearches");
@@ -115,11 +104,6 @@ export default function BrowsePage() {
       setSelectedCategory(decodeURIComponent(categoryParam));
     }
   }, [searchParams]);
-
-  const handlePreferenceContinue = (preference) => {
-    localStorage.setItem("shoppingPreference", preference);
-    setShowPreferenceModal(false);
-  };
 
   const startTryOnNavigation = (productId) => {
     if (!productId) return;
@@ -358,12 +342,6 @@ export default function BrowsePage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <ShoppingPreferenceModal
-        isOpen={showPreferenceModal}
-        onClose={() => setShowPreferenceModal(false)}
-        onContinue={handlePreferenceContinue}
-      />
-
       <input
         ref={uploadInputRef}
         type="file"
