@@ -5,6 +5,7 @@ import {
   success,
   error,
   notFound,
+  enforceRateLimit,
   cacheService,
   CACHE_PREFIX,
   CACHE_TTL,
@@ -15,6 +16,20 @@ import {
 export const runtime = "nodejs";
 
 export async function GET(_request, { params }) {
+  const rateLimit = enforceRateLimit(_request);
+  if (rateLimit.limited) {
+    return NextResponse.json(
+      error("Too many requests — please slow down and try again shortly.", null, 429),
+      {
+        status: 429,
+        headers: withJsonHeaders({
+          ...rateLimit.headers,
+          "Retry-After": String(rateLimit.retryAfterSeconds),
+        }),
+      }
+    );
+  }
+
   try {
     await connectDB();
     const slug = params?.slug;
@@ -22,7 +37,7 @@ export async function GET(_request, { params }) {
     if (!slug) {
       return NextResponse.json(notFound("Product slug is required"), {
         status: 400,
-        headers: withJsonHeaders(),
+        headers: withJsonHeaders(rateLimit.headers),
       });
     }
 
@@ -32,6 +47,7 @@ export async function GET(_request, { params }) {
       return NextResponse.json(success("Product found", cached), {
         status: 200,
         headers: withJsonHeaders({
+          ...rateLimit.headers,
           "X-Cache": "HIT",
           "Cache-Control": "public, max-age=300",
         }),
@@ -47,7 +63,7 @@ export async function GET(_request, { params }) {
     if (!product) {
       return NextResponse.json(notFound("Product not found"), {
         status: 404,
-        headers: withJsonHeaders(),
+        headers: withJsonHeaders(rateLimit.headers),
       });
     }
 
@@ -57,6 +73,7 @@ export async function GET(_request, { params }) {
     return NextResponse.json(success("Product found", product), {
       status: 200,
       headers: withJsonHeaders({
+        ...rateLimit.headers,
         "X-Cache": "MISS",
         "Cache-Control": "public, max-age=300",
       }),
@@ -64,7 +81,7 @@ export async function GET(_request, { params }) {
   } catch (err) {
     return NextResponse.json(
       error(err.message || "Product lookup failed", null, 500),
-      { status: 500, headers: withJsonHeaders() }
+      { status: 500, headers: withJsonHeaders(rateLimit.headers) }
     );
   }
 }

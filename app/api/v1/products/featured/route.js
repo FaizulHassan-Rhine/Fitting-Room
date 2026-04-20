@@ -4,6 +4,7 @@ import {
   Product,
   success,
   error,
+  enforceRateLimit,
   cacheService,
   CACHE_PREFIX,
   CACHE_TTL,
@@ -14,7 +15,21 @@ import {
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request) {
+  const rateLimit = enforceRateLimit(request);
+  if (rateLimit.limited) {
+    return NextResponse.json(
+      error("Too many requests — please slow down and try again shortly.", null, 429),
+      {
+        status: 429,
+        headers: withJsonHeaders({
+          ...rateLimit.headers,
+          "Retry-After": String(rateLimit.retryAfterSeconds),
+        }),
+      }
+    );
+  }
+
   try {
     await connectDB();
     const cacheKey = `${CACHE_PREFIX.PRODUCT}featured`;
@@ -24,6 +39,7 @@ export async function GET() {
       return NextResponse.json(success("Featured products", cached), {
         status: 200,
         headers: withJsonHeaders({
+          ...rateLimit.headers,
           "X-Cache": "HIT",
           "Cache-Control": "public, max-age=300",
         }),
@@ -53,12 +69,15 @@ export async function GET() {
 
     return NextResponse.json(success("Featured products", data), {
       status: 200,
-      headers: withJsonHeaders({ "Cache-Control": "public, max-age=300" }),
+      headers: withJsonHeaders({
+        ...rateLimit.headers,
+        "Cache-Control": "public, max-age=300",
+      }),
     });
   } catch (err) {
     return NextResponse.json(
       error(err.message || "Featured products request failed", null, 500),
-      { status: 500, headers: withJsonHeaders() }
+      { status: 500, headers: withJsonHeaders(rateLimit.headers) }
     );
   }
 }

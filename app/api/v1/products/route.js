@@ -4,6 +4,7 @@ import {
   Product,
   success,
   error,
+  enforceRateLimit,
   buildFlattenProductsStages,
   buildSafePriceNumberExpr,
   urlToSlug,
@@ -17,6 +18,20 @@ function escapeRegex(value) {
 }
 
 export async function GET(request) {
+  const rateLimit = enforceRateLimit(request);
+  if (rateLimit.limited) {
+    return NextResponse.json(
+      error("Too many requests — please slow down and try again shortly.", null, 429),
+      {
+        status: 429,
+        headers: withJsonHeaders({
+          ...rateLimit.headers,
+          "Retry-After": String(rateLimit.retryAfterSeconds),
+        }),
+      }
+    );
+  }
+
   try {
     await connectDB();
     const { searchParams } = new URL(request.url);
@@ -91,12 +106,12 @@ export async function GET(request) {
           hasPrev: pageNum > 1,
         },
       }),
-      { status: 200, headers: withJsonHeaders() }
+      { status: 200, headers: withJsonHeaders(rateLimit.headers) }
     );
   } catch (err) {
     return NextResponse.json(
       error(err.message || "Products request failed", null, 500),
-      { status: 500, headers: withJsonHeaders() }
+      { status: 500, headers: withJsonHeaders(rateLimit.headers) }
     );
   }
 }
