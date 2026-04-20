@@ -26,11 +26,7 @@ const sortOptions = [
   { value: "newest", label: "Newest First" },
 ];
 
-const SEARCH_API_BASES = [
-  process.env.NEXT_PUBLIC_SEARCH_API_BASE,
-  "http://localhost:5001/api/v1",
-  "http://localhost:5000/api/v1",
-].filter(Boolean);
+const SEARCH_API_ROUTE = "/api/search";
 
 export default function BrowsePage() {
   const router = useRouter();
@@ -219,28 +215,14 @@ export default function BrowsePage() {
         params.set("sort", sortMap[sortBy] || "relevance");
         params.set("limit", "100");
 
-        let json = null;
-        let lastError = null;
-        for (const base of SEARCH_API_BASES) {
-          try {
-            const res = await fetch(`${base}/search?${params.toString()}`, {
-              signal: controller.signal,
-              headers: { Accept: "application/json" },
-            });
-            if (!res.ok) {
-              lastError = new Error(`Search API failed (${res.status}) at ${base}`);
-              continue;
-            }
-            json = await res.json();
-            break;
-          } catch (err) {
-            if (err.name === "AbortError") throw err;
-            lastError = err;
-          }
+        const res = await fetch(`${SEARCH_API_ROUTE}?${params.toString()}`, {
+          signal: controller.signal,
+          headers: { Accept: "application/json" },
+        });
+        if (!res.ok) {
+          throw new Error(`Search API failed (${res.status})`);
         }
-        if (!json) {
-          throw lastError || new Error("Search API unavailable");
-        }
+        const json = await res.json();
         const apiItems = Array.isArray(json?.data?.data) ? json.data.data : [];
 
         const mapped = apiItems.map((p, idx) => {

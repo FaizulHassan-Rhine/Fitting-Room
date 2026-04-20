@@ -29,9 +29,13 @@ export default function LocationDetector() {
 
     const detectByIP = async () => {
       try {
-        // In production, use a service like ipapi.co, ip-api.com, or similar
-        // For demo, we'll use a free API
-        const response = await fetch("https://ipapi.co/json/");
+        // Call our own API route so the browser stays same-origin (no CORS issues).
+        const response = await fetch("/api/location", {
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) {
+          throw new Error(`Location API failed (${response.status})`);
+        }
         const data = await response.json();
         
         if (data.country_code) {
