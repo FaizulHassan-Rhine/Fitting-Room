@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-white text-black font-sans antialiased;
+  }
+}
+
+/* Force light-gray background to rgb(245,245,245) dfsdfsd*/
+.bg-light-gray {
+  background-color: rgb(245 245 245);
+}
+
+/* Thumbnail carousel: no scrollbar, touch-friendly swipe */
+.thumb-slider {
+  padding-left: 3px;
+  padding-right: 3px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.thumb-slider::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar on tab strips while keeping scroll capability */
+.scrollbar-hide {
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+@layer components {
+  .btn {
+    @apply px-6 py-3 font-medium transition-all duration-300 rounded-sm transform hover:scale-105 active:scale-95;
+  }
+  
+  .btn-primary {
+    @apply bg-black text-white hover:bg-dark-gray shadow-md hover:shadow-lg;
+  }
+  
+  .btn-secondary {
+    @apply bg-white text-black border border-black hover:bg-light-gray shadow-sm hover:shadow-md;
+  }
+  
+  .card {
+    @apply bg-white border border-light-gray p-6 rounded-sm transition-all duration-300 hover:shadow-lg;
+  }
+  
+  .input {
+    @apply w-full px-4 py-2 border border-medium-gray rounded-sm focus:outline-none focus:border-black transition-all duration-200 focus:ring-2 focus:ring-black focus:ring-opacity-20;
+  }
+
+  .fade-in {
+    animation: fadeIn 0.6s ease-in;
+  }
+
+  .slide-up {
+    animation: slideUp 0.6s ease-out;
+  }
+
+  .slide-in-left {
+    animation: slideInLeft 0.6s ease-out;
+  }
+
+  .slide-in-right {
+    animation: slideInRight 0.6s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
