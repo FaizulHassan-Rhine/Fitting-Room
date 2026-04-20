@@ -1,10 +1,16 @@
 /**
  * Build aggregation stages that normalize product documents into one flat stream.
  *
- * Supports both shapes:
- * 1) Nested wrapper document:
+ * Supports these shapes:
+ * 1) Domain-wrapped document (new):
+ *    {
+ *      domains: [
+ *        { domain, total_products, products: [ { url, title, ... } ] }
+ *      ]
+ *    }
+ * 2) Root wrapper document (legacy):
  *    { domain, total_products, products: [ { url, title, ... } ] }
- * 2) Flat product document:
+ * 3) Flat product document:
  *    { url, title, ... }
  */
 function buildFlattenProductsStages() {
@@ -13,20 +19,52 @@ function buildFlattenProductsStages() {
       $addFields: {
         _items: {
           $cond: [
-            { $isArray: '$products' },
-            '$products',
-            [
-              {
-                url: '$url',
-                title: '$title',
-                description: '$description',
-                brandName: '$brandName',
-                brandUrl: '$brandUrl',
-                price: '$price',
-                currency: '$currency',
-                images: '$images',
+            { $isArray: '$domains' },
+            {
+              // Flatten domains[].products[] into a single product stream.
+              $reduce: {
+                input: '$domains',
+                initialValue: [],
+                in: {
+                  $concatArrays: [
+                    '$$value',
+                    {
+                      $map: {
+                        input: { $ifNull: ['$$this.products', []] },
+                        as: 'p',
+                        in: {
+                          $mergeObjects: [
+                            '$$p',
+                            {
+                              sourceDomain: '$$this.domain',
+                              sourceDomainProductCount: '$$this.total_products',
+                            },
+                          ],
+                        },
+                      },
+                    },
+                  ],
+                },
               },
-            ],
+            },
+            {
+              $cond: [
+                { $isArray: '$products' },
+                '$products',
+                [
+                  {
+                    url: '$url',
+                    title: '$title',
+                    description: '$description',
+                    brandName: '$brandName',
+                    brandUrl: '$brandUrl',
+                    price: '$price',
+                    currency: '$currency',
+                    images: '$images',
+                  },
+                ],
+              ],
+            },
           ],
         },
       },
@@ -39,7 +77,7 @@ function buildFlattenProductsStages() {
             '$_items',
             {
               sourceDocumentId: '$_id',
-              sourceDomain: '$domain',
+              sourceDomain: { $ifNull: ['$_items.sourceDomain', '$domain'] },
             },
           ],
         },

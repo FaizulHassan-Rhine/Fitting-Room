@@ -5,12 +5,21 @@ const mongoose = require('mongoose');
  *
  * Supported document shapes:
  * {
- *   // Shape A (wrapper):
+ *   // Shape A (domains wrapper):
+ *   domains: [
+ *     {
+ *       domain: "https://www.yellowclothing.net",
+ *       total_products: 772,
+ *       products: [ { url, title, brandName, ... } ]
+ *     }
+ *   ],
+ *
+ *   // Shape B (root wrapper):
  *   domain: "https://www.yellowclothing.net",
  *   total_products: 772,
  *   products: [ { url, title, brandName, ... } ]
  *
- *   // Shape B (flat):
+ *   // Shape C (flat):
  *   url: "https://www.yellowclothing.net/products/w-ethnic-2-pcs-98",
  *   title: "Relaxed fit Printed Two-Piece Ethnic Set",
  *   ...
@@ -74,6 +83,8 @@ productSchema.index({ url: 1 });
 // Lookup indexes for wrapper-shape collections (products array)
 productSchema.index({ 'products.brandName': 1 });
 productSchema.index({ 'products.url': 1 });
+productSchema.index({ 'domains.products.brandName': 1 });
+productSchema.index({ 'domains.products.url': 1 });
 
 // ─── Static helper ─────────────────────────────────────────────────────────────
 
