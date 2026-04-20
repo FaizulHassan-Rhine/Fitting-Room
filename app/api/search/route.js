@@ -1,27 +1,9 @@
 import { NextResponse } from "next/server";
 
-function getSearchApiBase() {
-  const configuredBase = process.env.SEARCH_API_BASE || process.env.NEXT_PUBLIC_SEARCH_API_BASE;
-  if (configuredBase) return configuredBase.replace(/\/+$/, "");
-
-  if (process.env.NODE_ENV !== "production") {
-    return "http://localhost:5000/api/v1";
-  }
-
-  return "";
-}
-
 export async function GET(request) {
-  const base = getSearchApiBase();
-  if (!base) {
-    return NextResponse.json(
-      { message: "Search API base URL is not configured." },
-      { status: 500 }
-    );
-  }
-
   const { searchParams } = new URL(request.url);
-  const upstreamUrl = `${base}/search?${searchParams.toString()}`;
+  const origin = request.nextUrl.origin;
+  const upstreamUrl = `${origin}/api/v1/search?${searchParams.toString()}`;
 
   try {
     const upstream = await fetch(upstreamUrl, {
@@ -36,6 +18,6 @@ export async function GET(request) {
     });
   } catch (error) {
     console.error("Search proxy failed:", error);
-    return NextResponse.json({ message: "Search service is unavailable." }, { status: 502 });
+    return NextResponse.json({ message: "Search service is unavailable." }, { status: 500 });
   }
 }

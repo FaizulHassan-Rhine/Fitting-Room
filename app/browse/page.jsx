@@ -26,7 +26,7 @@ const sortOptions = [
   { value: "newest", label: "Newest First" },
 ];
 
-const SEARCH_API_ROUTE = "/api/search";
+const SEARCH_API_ROUTE = "/api/v1/search";
 
 export default function BrowsePage() {
   const router = useRouter();
